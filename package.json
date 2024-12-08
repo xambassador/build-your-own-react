@@ -4,7 +4,7 @@
   "description": "`Miniact` is a playful, educational re-implementation of `React’s` core ideas, aiming to demystify how hooks, fibers, and the virtual DOM come together. This tiny react implementation is not production-ready. It’s a hands-on sandbox for understanding the internals of rendering, reconciliation, and scheduling. By exploring `Miniact` source, you’ll gain insight into the architectural patterns behind React and learn how to build and customize your own UI library from scratch.",
   "main": "index.js",
   "scripts": {
-    "dev": "tsc --watch"
+    "dev": "tsc --watch -p tsconfig.json"
   },
   "keywords": [
     "react",
