@@ -1,0 +1,43 @@
+{
+  "name": "build-your-own-react",
+  "version": "1.0.0",
+  "description": "`Miniact` is a playful, educational re-implementation of `React’s` core ideas, aiming to demystify how hooks, fibers, and the virtual DOM come together. This tiny react implementation is not production-ready. It’s a hands-on sandbox for understanding the internals of rendering, reconciliation, and scheduling. By exploring `Miniact` source, you’ll gain insight into the architectural patterns behind React and learn how to build and customize your own UI library from scratch.",
+  "main": "index.js",
+  "scripts": {
+    "dev": "tsc --watch"
+  },
+  "keywords": [
+    "react",
+    "miniact",
+    "build-your-own-react",
+    "react-implementation",
+    "react-core",
+    "react-hooks",
+    "react-fibers",
+    "virtual-dom",
+    "rendering",
+    "reconciliation",
+    "scheduling",
+    "react-architecture",
+    "ui-library",
+    "react-source",
+    "react-internals",
+    "react-customization",
+    "react-sandbox",
+    "preact"
+  ],
+  "author": {
+    "name": "Yash Ramoliya",
+    "email": "yashramoliya12@gmail.com",
+    "url": "https://yashramoliya.dev"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xambassador/build-your-own-react.git"
+  },
+  "license": "MIT",
+  "packageManager": "yarn@1.22.21+sha1.1959a18351b811cdeedbd484a8f86c3cc3bbaf72",
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}
