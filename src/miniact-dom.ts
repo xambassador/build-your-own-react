@@ -21,10 +21,6 @@ const INTERNALS = {
    */
   currentRoot: null,
   /**
-   * Hook index to keep track of the current hook being processed
-   */
-  hookIndex: 0,
-  /**
    * Holds the current component's fiber. When a functional component is being rendered,
    * this variable holds the fiber for that component.
    */
@@ -54,13 +50,6 @@ const INTERNALS = {
       log("[setCurrentRoot]", label, { ...fiber });
     }
     this.currentRoot = fiber;
-  },
-
-  setHookIndex(index, label = "") {
-    if (label) {
-      log("[setHookIndex]", label, index);
-    }
-    this.hookIndex = index;
   },
 
   setWipFiber(fiber, label = "") {
@@ -114,34 +103,40 @@ window.INTERNALS = INTERNALS;
 function FiberNode(type, props, parent) {
   // Type of an element like div, span, or a function/class component
   this.type = type;
+
   // Props of an element
   this.props = props || {};
+
   // Reference to the parent fiber
   // Helps in traversing and finding the correct DOM insertion point
   this.parent = parent || null;
+
   // Reference to the first child fiber
   // Used for depth-first traversal of the fiber tree
   this.child = null;
+
   // Reference to the next sibling fiber
   // Allows horizontal traversal between elements at the same level
   this.sibling = null;
+
   // Reference to the actual DOM node
   this.dom = null;
+
   // Reference to the previous render's fiber (for diffing)
   // Used to compare and determine minimal DOM updates
   this.alternate = null;
+
   // Effect tag to determine what to do with the fiber. Possible values are:
   // 1. PLACEMENT: Add a new node to the DOM
   // 2. DELETION: Remove the node from the DOM
   // 3. UPDATE: Update the node in the DOM
   this.effectTag = null;
 
-  // Memoize props to compare with the next render
-  this.memoizedProps = null;
-  this.memoizedChildren = null;
-
   // Hooks for function components
   this.hooks = null;
+
+  // For function components, we need to keep track of the hook index
+  this.hookIndex = 0;
 }
 
 /**
@@ -265,6 +260,35 @@ function commitWork(fiber, parentDom) {
   commitWork(fiber.sibling, null);
 }
 
+function runEffects(fiber) {
+  if (!fiber) return;
+  if (fiber.hooks && fiber.hooks.length > 0) {
+    fiber.hooks.forEach((hook) => {
+      if (hook.effect) {
+        const hasDeps = Array.isArray(hook.deps);
+        const shouldRunEffect =
+          !hasDeps || !hook.oldDeps || hook.deps.some((dep, i) => Object.is(dep, hook.oldDeps[i]));
+        if (shouldRunEffect) {
+          // Cleanup the previous effect
+          if (hook.cleanup && typeof hook.cleanup === "function") {
+            hook.cleanup();
+          }
+
+          const cleanup = hook.effect();
+          if (typeof cleanup === "function") {
+            hook.cleanup = cleanup;
+          }
+
+          hook.oldDeps = hook.deps;
+        }
+      }
+    });
+  }
+
+  runEffects(fiber.child);
+  runEffects(fiber.sibling);
+}
+
 /**
  * Commit the changes to the DOM
  */
@@ -280,6 +304,9 @@ function commitRoot() {
   if (wipRoot && wipRoot.child) {
     commitWork(wipRoot.child, wipRoot.dom);
   }
+
+  // After DOM is updated, run effects
+  runEffects(wipRoot);
 
   INTERNALS.setCurrentRoot(INTERNALS.wipRoot, "commitRoot()");
   INTERNALS.setWipRoot(null, "commitRoot()");
@@ -299,7 +326,7 @@ function reconcileChildren(wipFiber, elements) {
     if (sameType) {
       // Check if the props are the same or not
       const { children, ...elementProps } = element.props;
-      const { children: oldChildren, ...oldFiberProps } = oldFiber.memoizedProps;
+      const { children: oldChildren, ...oldFiberProps } = oldFiber.props;
       const arePropsEqual = shallowEqual(elementProps, oldFiberProps);
       if (arePropsEqual) {
         newFiber = createFiber(oldFiber.type, { ...element.props, children }, wipFiber);
@@ -308,8 +335,6 @@ function reconcileChildren(wipFiber, elements) {
         newFiber.sibling = oldFiber.sibling;
         newFiber.alternate = oldFiber;
         newFiber.effectTag = null;
-        newFiber.memoizedProps = { ...oldFiberProps, children: oldChildren };
-        newFiber.memoizedChildren = oldFiber.memoizedChildren;
         newFiber.hooks = oldFiber.hooks;
       } else {
         newFiber = createFiber(element.type, element.props, wipFiber);
@@ -318,8 +343,6 @@ function reconcileChildren(wipFiber, elements) {
         newFiber.sibling = oldFiber.sibling;
         newFiber.alternate = oldFiber;
         newFiber.effectTag = "UPDATE";
-        newFiber.memoizedProps = { ...oldFiberProps, children: oldChildren };
-        newFiber.memoizedChildren = oldFiber.memoizedChildren;
         newFiber.hooks = oldFiber.hooks;
       }
     }
@@ -329,7 +352,6 @@ function reconcileChildren(wipFiber, elements) {
        * We have a new element with no matching old fiber. We need to create a new fiber for this element.
        */
       newFiber = createFiber(element.type, element.props, wipFiber);
-      newFiber.memoizedProps = element.props;
       newFiber.effectTag = "PLACEMENT";
     }
 
@@ -365,16 +387,14 @@ function performUnitOfWork(currentFiber) {
      * Reset hook index to 0. This is why hooks should always be called in the same order, and at the top level of the
      * function component. Calling hooks conditionally or inside loops, the index will get out of sync.
      */
-    INTERNALS.setHookIndex(0, "performUnitOfWork()");
+    currentFiber.hookIndex = 0;
     /**
      * Set wipFiber to the current fiber, so the hooks can be set on this fiber.
      */
     INTERNALS.setWipFiber(currentFiber, "performUnitOfWork()");
-    INTERNALS.wipFiber.hooks = [];
+    currentFiber.hooks = [];
     const children = [currentFiber.type(currentFiber.props)];
-    INTERNALS.wipFiber.memoizedProps = currentFiber.props;
-    INTERNALS.wipFiber.memoizedChildren = children;
-    reconcileChildren(INTERNALS.wipFiber, children);
+    reconcileChildren(currentFiber, children);
   } else {
     /**
      * This is a host component (like div, span, etc.).
@@ -383,8 +403,6 @@ function performUnitOfWork(currentFiber) {
     if (currentFiber.dom === null) {
       currentFiber.dom = createDom(currentFiber);
     }
-    currentFiber.memoizedProps = currentFiber.props;
-    currentFiber.memoizedChildren = currentFiber.props.children;
     reconcileChildren(currentFiber, currentFiber.props.children);
   }
 
@@ -482,7 +500,7 @@ function flushSync() {
 function useState(initial) {
   // Get the old hook if it exists
   const wipFiber = INTERNALS.getWipFiber("useState()");
-  const oldHook = wipFiber.alternate && wipFiber.alternate.hooks && wipFiber.alternate.hooks[INTERNALS.hookIndex];
+  const oldHook = wipFiber.alternate && wipFiber.alternate.hooks && wipFiber.alternate.hooks[wipFiber.hookIndex];
 
   // If old hook exists, then we're on the update phase else this is initial render
   const hook = {
@@ -514,8 +532,22 @@ function useState(initial) {
 
   // Store the hook in the current fiber
   INTERNALS.wipFiber.hooks.push(hook);
-  INTERNALS.hookIndex++;
+  wipFiber.hookIndex++;
   return [hook.state, setState];
+}
+
+function useEffect(effect, dependencies) {
+  const wipFiber = INTERNALS.getWipFiber("useEffect()");
+  const oldHook = wipFiber.alternate && wipFiber.alternate.hooks && wipFiber.alternate.hooks[wipFiber.hookIndex];
+
+  const hook = {
+    deps: dependencies,
+    effect,
+    cleanup: oldHook ? oldHook.cleanup : null
+  };
+
+  wipFiber.hooks.push(hook);
+  wipFiber.hookIndex++;
 }
 
 /**
@@ -554,4 +586,4 @@ function render(vnode, container) {
   flushSync();
 }
 
-export { render, useState };
+export { render, useState, useEffect };
