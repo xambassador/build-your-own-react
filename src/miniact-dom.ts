@@ -137,6 +137,9 @@ function FiberNode(type, props, parent) {
 
   // For function components, we need to keep track of the hook index
   this.hookIndex = 0;
+
+  this.childLanes = 0; // 0 means child has no updates
+  this.lanes = 0; // 0 means no updates for this fiber
 }
 
 /**
@@ -497,6 +500,51 @@ function flushSync() {
   workLoopSync();
 }
 
+function markUpdateLaneFromFiberToRoot(fiber, lane) {
+  // update source fiber's lanes
+  fiber.lanes = 1;
+  let alternate = fiber.alternate;
+  if (alternate) {
+    // React use double buffering, so we need to mark the alternate fiber as well
+    alternate.lanes = 1;
+  }
+
+  // Walk up the fiber tree till root and update the child lanes
+  let node = fiber;
+  let parent = fiber.parent;
+  while (parent !== null) {
+    parent.childLanes = 1;
+    alternate = parent.alternate;
+    if (alternate) {
+      alternate.childLanes = 1;
+    }
+    node = parent;
+    parent = parent.parent;
+  }
+
+  if (node.tag === "ROOT") {
+    return node;
+  }
+  return null;
+}
+
+function dispatchSetState(fiber, queue, action) {
+  // Enqueue the state update action
+  queue.push(action);
+  markUpdateLaneFromFiberToRoot(fiber, 1);
+  // Trigger a re-render from the root to update the UI
+  const currentRoot = INTERNALS.getCurrentRoot("useState().setState()");
+  const newWipRoot = {
+    ...currentRoot,
+    alternate: currentRoot,
+    props: currentRoot.props
+  };
+  INTERNALS.setWipRoot(newWipRoot, "useState().setState()");
+  INTERNALS.setNextUnitOfWork(INTERNALS.wipRoot, "useState().setState()");
+  INTERNALS.deletions = [];
+  requestIdleCallback(workLoopConcurrent);
+}
+
 function useState(initial) {
   // Get the old hook if it exists
   const wipFiber = INTERNALS.getWipFiber("useState()");
@@ -513,27 +561,12 @@ function useState(initial) {
     hook.state = typeof action === "function" ? action(hook.state) : action;
   }
 
-  function setState(action) {
-    // Enqueue the state update action
-    hook.queue.push(action);
-
-    // Trigger a re-render from the root to update the UI
-    const currentRoot = INTERNALS.getCurrentRoot("useState().setState()");
-    const newWipRoot = {
-      ...currentRoot,
-      alternate: currentRoot,
-      props: currentRoot.props
-    };
-    INTERNALS.setWipRoot(newWipRoot, "useState().setState()");
-    INTERNALS.setNextUnitOfWork(INTERNALS.wipRoot, "useState().setState()");
-    INTERNALS.deletions = [];
-    requestIdleCallback(workLoopConcurrent);
-  }
+  const dispatch = dispatchSetState.bind(null, wipFiber, hook.queue);
 
   // Store the hook in the current fiber
   INTERNALS.wipFiber.hooks.push(hook);
   wipFiber.hookIndex++;
-  return [hook.state, setState];
+  return [hook.state, dispatch];
 }
 
 function useEffect(effect, dependencies) {
@@ -558,7 +591,7 @@ function useEffect(effect, dependencies) {
  */
 function render(vnode, container) {
   /**
-   * If we have currentRoot (the last commited fiber tree), we can use it as the starting point.
+   * If we have currentRoot (the last committed fiber tree), we can use it as the starting point.
    * If not, we are doing initial render
    */
 
@@ -566,6 +599,7 @@ function render(vnode, container) {
     const rootFiber = createFiber(null, {}, null);
     rootFiber.dom = container;
     rootFiber.props.children = [vnode];
+    rootFiber.tag = "ROOT";
     INTERNALS.setCurrentRoot(rootFiber, "Initial render");
   }
 

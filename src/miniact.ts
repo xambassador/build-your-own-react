@@ -13,7 +13,7 @@ const REACT_ELEMENT_TYPE = Symbol("react.element");
 /**
  * Create and return a new ReactElement of the given type. ReactElement is a lightweight object (POJO). It is what we can
  * call a virtual DOM node (descriptor object). It is used to represent a DOM node in the virtual DOM tree. This function
- * will be refrence by JSX transpiler when it transpiles our code and put it in the output code.
+ * will be reference by JSX transpiler when it transpiles our code and put it in the output code.
  *
  * @see https://github.com/facebook/react/blob/7283a213dbbc31029e65005276f12202558558fc/packages/react/src/jsx/ReactJSXElement.js#L641
  */
@@ -30,7 +30,7 @@ function createElement(type, config, ...children) {
     key = "" + config.key;
   }
 
-  // Add remaining properties to props obnject.
+  // Add remaining properties to props object.
   for (propName in config) {
     const isKnownProps = Object.prototype.hasOwnProperty.call(config, propName);
     const isReservedProp = propName === "key";
